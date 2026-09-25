@@ -27,13 +27,20 @@ final class TreeHelper implements \RecursiveIterator
      */
     private \Iterator $children;
 
+    private ?TreeNode $preparedNode = null;
+    private ?\Iterator $preparedChildren = null;
+    private ?bool $preparedHasChildren = null;
+
     private function __construct(
         private readonly OutputInterface $output,
         private readonly TreeNode $node,
         private readonly TreeStyle $style,
+        ?\Iterator $children = null,
     ) {
-        $this->children = new \IteratorIterator($this->node->getChildren());
-        $this->children->rewind();
+        $this->children = $children ?? new \IteratorIterator($this->node->getChildren());
+        if (null === $children) {
+            $this->children->rewind();
+        }
     }
 
     public static function createTree(OutputInterface $output, string|TreeNode|null $root = null, iterable $values = [], ?TreeStyle $style = null): self
@@ -55,11 +62,13 @@ final class TreeHelper implements \RecursiveIterator
 
     public function next(): void
     {
+        $this->resetPreparedChildren();
         $this->children->next();
     }
 
     public function rewind(): void
     {
+        $this->resetPreparedChildren();
         $this->children->rewind();
     }
 
@@ -70,20 +79,35 @@ final class TreeHelper implements \RecursiveIterator
 
     public function hasChildren(): bool
     {
-        if (null === $current = $this->current()) {
-            return false;
+        $current = $this->current();
+
+        if ($this->preparedNode === $current) {
+            return (bool) $this->preparedHasChildren;
         }
 
-        foreach ($current->getChildren() as $child) {
-            return true;
-        }
+        $this->preparedNode = $current;
+        $this->preparedChildren = new \IteratorIterator($current->getChildren());
+        $this->preparedChildren->rewind();
+        $this->preparedHasChildren = $this->preparedChildren->valid();
 
-        return false;
+        return $this->preparedHasChildren;
     }
 
     public function getChildren(): \RecursiveIterator
     {
-        return new self($this->output, $this->current(), $this->style);
+        $current = $this->current();
+        $children = $this->preparedNode === $current ? $this->preparedChildren : null;
+
+        $this->resetPreparedChildren();
+
+        return new self($this->output, $current, $this->style, $children);
+    }
+
+    private function resetPreparedChildren(): void
+    {
+        $this->preparedNode = null;
+        $this->preparedChildren = null;
+        $this->preparedHasChildren = null;
     }
 
     /**
@@ -97,13 +121,21 @@ final class TreeHelper implements \RecursiveIterator
 
         $this->output->writeln($this->node->getValue());
 
-        $visited = new \SplObjectStorage();
+        // Keep the nodes on the current path instead of all nodes seen so far. The
+        // same TreeNode can legitimately be attached to more than one branch; that
+        // is not a cycle and must not prevent the second branch from being rendered.
+        $path = [$this->node];
         foreach ($treeIterator as $node) {
             $currentNode = $node instanceof TreeNode ? $node : $treeIterator->getInnerIterator()->current();
-            if (isset($visited[$currentNode])) {
-                throw new \LogicException(\sprintf('Cycle detected at node: "%s".', $currentNode->getValue()));
+            $depth = $treeIterator->getDepth() + 1; // The root is not part of RecursiveTreeIterator.
+            $path = \array_slice($path, 0, $depth);
+
+            foreach ($path as $ancestor) {
+                if ($ancestor === $currentNode) {
+                    throw new \LogicException(\sprintf('Cycle detected at node: "%s".', $currentNode->getValue()));
+                }
             }
-            $visited[$currentNode] = true;
+            $path[$depth] = $currentNode;
 
             $this->output->writeln($node);
         }
