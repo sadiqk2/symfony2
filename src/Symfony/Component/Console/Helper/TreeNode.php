@@ -36,12 +36,15 @@ final class TreeNode implements \Countable, \IteratorAggregate
     {
         $node ??= new self();
         foreach ($nodes as $key => $value) {
-            if (is_iterable($value)) {
+            // TreeNode implements IteratorAggregate, so it is iterable as well. Check it
+            // before treating iterable values as nested arrays, otherwise passing a node
+            // loses both its value and its children.
+            if ($value instanceof self) {
+                $node->addChild($value);
+            } elseif (is_iterable($value)) {
                 $child = new self($key);
                 self::fromValues($value, $child);
                 $node->addChild($child);
-            } elseif ($value instanceof self) {
-                $node->addChild($value);
             } else {
                 $node->addChild(new self($value));
             }

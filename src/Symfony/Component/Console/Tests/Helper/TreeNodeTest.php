@@ -83,4 +83,16 @@ class TreeNodeTest extends TestCase
         $this->assertSame(2, iterator_count($root->getChildren()));
         $this->assertSame($leaf1, iterator_to_array($child1->getChildren())[0]);
     }
+
+    public function testFromValuesPreservesTreeNodeValuesAndChildren()
+    {
+        $child = (new TreeNode('Child'))->addChild('Leaf');
+        $root = TreeNode::fromValues([$child]);
+
+        $children = iterator_to_array($root->getChildren());
+
+        $this->assertSame($child, $children[0]);
+        $this->assertSame('Child', $children[0]->getValue());
+        $this->assertSame('Leaf', iterator_to_array($children[0]->getChildren())[0]->getValue());
+    }
 }

@@ -256,6 +256,52 @@ class TreeHelperTest extends TestCase
         );
     }
 
+    public function testRenderSharedNodeInMultipleBranches()
+    {
+        $shared = new TreeNode('Shared');
+        $rootNode = new TreeNode('Root');
+        $rootNode->addChild((new TreeNode('First'))->addChild($shared));
+        $rootNode->addChild((new TreeNode('Second'))->addChild($shared));
+
+        $output = new BufferedOutput();
+        TreeHelper::createTree($output, $rootNode)->render();
+
+        $this->assertSame(<<<TREE
+            Root
+            ├── First
+            │   └── Shared
+            └── Second
+                └── Shared
+            TREE,
+            self::normalizeLineBreaks(trim($output->fetch()))
+        );
+    }
+
+    public function testLazyChildrenAreEvaluatedOnlyOncePerBranch()
+    {
+        $calls = 0;
+        $parent = new TreeNode('Parent');
+        $parent->addChild(function () use (&$calls) {
+            ++$calls;
+            yield new TreeNode('Child');
+        });
+
+        $rootNode = new TreeNode('Root');
+        $rootNode->addChild($parent);
+
+        $output = new BufferedOutput();
+        TreeHelper::createTree($output, $rootNode)->render();
+
+        $this->assertSame(1, $calls);
+        $this->assertSame(<<<TREE
+            Root
+            └── Parent
+                └── Child
+            TREE,
+            self::normalizeLineBreaks(trim($output->fetch()))
+        );
+    }
+
     public function testRenderTreeWithComplexNodeNames()
     {
         $rootNode = new TreeNode('Root');
